@@ -4,8 +4,10 @@ defmodule UserServiceWeb.UserController do
   alias UserService.User
   import Ecto.Query
 
-  # GET /api/users/:id
+   # GET /api/users/:id
   def show(conn, %{"id" => id}) do
+    id = String.to_integer(id)
+
     case Repo.get(User, id) do
       nil ->
         conn
@@ -21,7 +23,7 @@ defmodule UserServiceWeb.UserController do
     end
   end
 
-  # POST /users
+  # POST /api/users
   def create(conn, %{"email" => email, "password" => password}) do
     changeset = User.changeset(%User{}, %{email: email, password: password})
 
@@ -35,75 +37,46 @@ defmodule UserServiceWeb.UserController do
           password: user.password
         })
 
-      {:error, changeset} ->
+      {:error, _changeset} ->
         conn
-        |> put_status(:bad_request)
-        |> json(%{error: "Error al crear usuario: #{inspect(changeset.errors)}"})
+        |> put_status(:internal_server_error)
+        |> json(%{error: "Error al crear el usuario"})
     end
   end
 
-  # PUT /users/:id
-  def update(conn, %{"id" => id_param, "email" => email, "password" => password}) do
-    # 1. Validar y parsear el ID a entero
-    case Integer.parse(id_param) do
-      {id, ""} ->
+  # PUT /api/users/:id (Optimizado: Sin SELECT previo, un solo viaje a la BD)
+  def update(conn, %{"id" => id, "email" => email, "password" => password}) do
+    id = String.to_integer(id)
+    query = from(u in User, where: u.id == ^id)
 
-        query = from(u in User, where: u.id == ^id)
-
-        # 2. Ejecutar el UPDATE directo en un solo viaje a la base de datos
-        case Repo.update_all(query, set: [email: email, password: password]) do
-          {0, _} ->
-            # Si afectó 0 filas, el usuario no existía (Equivalente a rowCount === 0)
-            conn
-            |> put_status(:not_found)
-            |> json(%{error: "Usuario no encontrado"})
-
-          {1, _} ->
-            # Si afectó 1 fila, la actualización fue exitosa.
-            # Retornamos los datos directamente simulando el objeto ya que conocemos los valores.
-            json(conn, %{
-              id: id,
-              email: email,
-              password: password
-            })
-        end
-
-      _ ->
+    case Repo.update_all(query, set: [email: email, password: password]) do
+      {0, _} ->
         conn
-        |> put_status(:bad_request)
-        |> json(%{error: "ID inválido"})
+        |> put_status(:not_found)
+        |> json(%{error: "Usuario no encontrado"})
+
+      {1, _} ->
+        json(conn, %{
+          id: id,
+          email: email,
+          password: password
+        })
     end
   end
 
-  # DELETE /users/:id
-  def delete(conn, %{"id" => id_param}) do
-    # 1. Validar y parsear el ID a entero
-    case Integer.parse(id_param) do
-      {id, ""} ->
+  # DELETE /api/users/:id (Optimizado: Eliminación directa)
+  def delete(conn, %{"id" => id}) do
+    id = String.to_integer(id)
+    query = from(u in User, where: u.id == ^id)
 
-        query = from(u in User, where: u.id == ^id)
+    case Repo.delete_all(query) do
+      {1, _} ->
+        json(conn, %{message: "Usuario eliminado"})
 
-        # 2. Ejecutar el DELETE directo en un solo viaje a la base de datos
-        case Repo.delete_all(query) do
-          {0, _} ->
-            # Si afectó 0 filas, el usuario no existía (Equivalente a rowCount === 0)
-            conn
-            |> put_status(:not_found)
-            |> json(%{error: "Usuario no encontrado"})
-
-          {1, _} ->
-            # Si afectó 1 fila, se eliminó con éxito.
-            # Retornamos el ID y el mensaje confirmando la eliminación limpia.
-            json(conn, %{
-              id: id,
-              message: "Usuario eliminado"
-            })
-        end
-
-      _ ->
+      {0, _} ->
         conn
-        |> put_status(:bad_request)
-        |> json(%{error: "ID inválido"})
+        |> put_status(:not_found)
+        |> json(%{error: "Usuario no encontrado"})
     end
   end
 end
